@@ -3,14 +3,17 @@
 import os
 from dataclasses import dataclass
 
+DEFAULT_NVIDIA_MODEL = "nvidia/nemotron-3.5-super-vl-120b-a12b"
+NVIDIA_CREDENTIAL_ENV_VAR = "NVIDIA_API_KEY"
+
 
 @dataclass(frozen=True, slots=True)
 class Settings:
     app_name: str = "Agente Pessoal"
     log_level: str = "INFO"
     database_path: str = "~/.agente_pessoal/agente_pessoal.sqlite3"
-    ai_model: str | None = None
-    ai_credential_env_var: str | None = None
+    ai_model: str | None = DEFAULT_NVIDIA_MODEL
+    ai_credential_env_var: str | None = NVIDIA_CREDENTIAL_ENV_VAR
     ai_timeout_seconds: float = 30.0
     ai_max_attempts: int = 2
     ai_max_request_chars: int = 10_000
@@ -25,8 +28,9 @@ class Settings:
         database_path = os.getenv(
             "AGENTE_PESSOAL_DB_PATH", "~/.agente_pessoal/agente_pessoal.sqlite3"
         )
-        model = os.getenv("AGENTE_PESSOAL_AI_MODEL") or None
-        credential_env_var = os.getenv("AGENTE_PESSOAL_AI_CREDENTIAL_ENV") or None
+        model = os.getenv("AGENTE_PESSOAL_AI_MODEL") or DEFAULT_NVIDIA_MODEL
+        # O adaptador NVIDIA aceita exclusivamente NVIDIA_API_KEY.
+        credential_env_var = NVIDIA_CREDENTIAL_ENV_VAR
         timeout_seconds = cls._bounded_float(
             os.getenv("AGENTE_PESSOAL_AI_TIMEOUT_SECONDS"), 30.0, 0.1, 120.0
         )

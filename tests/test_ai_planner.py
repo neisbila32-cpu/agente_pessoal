@@ -81,7 +81,7 @@ class AIPlannerTests(unittest.TestCase):
     def setUp(self):
         self.settings = Settings(
             ai_model="model-test",
-            ai_credential_env_var="AGENTE_TEST_KEY",
+            ai_credential_env_var="NVIDIA_API_KEY",
             ai_max_attempts=2,
         )
         self.catalog = [ToolDescription("controlled", "Ação de teste")]
@@ -99,9 +99,9 @@ class AIPlannerTests(unittest.TestCase):
         self.assertEqual(plan.steps[0].arguments, {"value": "ok"})
         request = provider.requests[0]
         self.assertEqual(request.model, "model-test")
-        self.assertEqual(request.credential_env_var, "AGENTE_TEST_KEY")
+        self.assertEqual(request.credential_env_var, "NVIDIA_API_KEY")
         self.assertNotIn("credential", request.prompt.lower())
-        with patch.dict(os.environ, {"AGENTE_TEST_KEY": "test-secret-value"}, clear=True):
+        with patch.dict(os.environ, {"NVIDIA_API_KEY": "test-secret-value"}, clear=True):
             self.assertEqual(request.credential_from_environment(), "test-secret-value")
         self.assertNotIn("test-secret-value", repr(request))
 
@@ -166,7 +166,9 @@ class AIPlannerTests(unittest.TestCase):
 
     def test_model_configuration_is_required_and_request_size_is_bounded(self):
         with self.assertRaises(ModelConfigurationError):
-            AIPlanner(ControlledProvider(response_payload()), Settings(), self.catalog)
+            AIPlanner(
+                ControlledProvider(response_payload()), Settings(ai_model=None), self.catalog
+            )
         provider = ControlledProvider(response_payload())
         planner = AIPlanner(
             provider,

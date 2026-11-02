@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from agente_pessoal.config import Settings
+from agente_pessoal.config.settings import DEFAULT_NVIDIA_MODEL
 
 
 class SettingsTests(unittest.TestCase):
@@ -27,7 +28,7 @@ class SettingsTests(unittest.TestCase):
         with patch.dict(os.environ, {"AGENTE_PESSOAL_DB_PATH": "D:/agent/state.db"}, clear=True):
             self.assertEqual(Settings.from_environment().database_path, "D:/agent/state.db")
 
-    def test_ai_settings_use_model_and_credential_variable_name_only(self):
+    def test_ai_settings_use_nvidia_model_and_fixed_credential_variable(self):
         with patch.dict(
             os.environ,
             {
@@ -40,8 +41,18 @@ class SettingsTests(unittest.TestCase):
             settings = Settings.from_environment()
 
         self.assertEqual(settings.ai_model, "model-choice")
-        self.assertEqual(settings.ai_credential_env_var, "MODEL_API_KEY")
+        self.assertEqual(settings.ai_credential_env_var, "NVIDIA_API_KEY")
         self.assertEqual(settings.ai_max_attempts, 3)
+
+    def test_ai_defaults_and_timeout_are_configurable(self):
+        with patch.dict(os.environ, {}, clear=True):
+            settings = Settings.from_environment()
+        self.assertEqual(settings.ai_model, DEFAULT_NVIDIA_MODEL)
+        self.assertEqual(settings.ai_credential_env_var, "NVIDIA_API_KEY")
+        self.assertEqual(settings.ai_timeout_seconds, 30.0)
+
+        with patch.dict(os.environ, {"AGENTE_PESSOAL_AI_TIMEOUT_SECONDS": "12.5"}, clear=True):
+            self.assertEqual(Settings.from_environment().ai_timeout_seconds, 12.5)
 
     def test_invalid_ai_attempt_limit_falls_back_to_safe_default(self):
         with patch.dict(

@@ -8,6 +8,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from agente_pessoal.ai.errors import (
+    MissingCredentialError,
     ModelCommunicationError,
     ModelConfigurationError,
     ModelProviderError,
@@ -101,6 +102,9 @@ class AIPlanner:
         for attempt in range(1, self._max_attempts + 1):
             try:
                 return self._provider.generate(request)
+            except MissingCredentialError:
+                # Ausência de credencial é configuração local, não indisponibilidade remota.
+                raise
             except ModelCommunicationError as exc:
                 last_error_type = type(exc).__name__
                 logger.warning(
@@ -109,6 +113,8 @@ class AIPlanner:
                     self._max_attempts,
                     last_error_type,
                 )
+            except ModelResponseError:
+                raise
             except ModelProviderError as exc:
                 logger.error("Falha do provedor (%s)", type(exc).__name__)
                 raise ModelUnavailableError(
