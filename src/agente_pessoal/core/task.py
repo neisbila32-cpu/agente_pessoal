@@ -6,6 +6,8 @@ from enum import StrEnum
 from typing import Mapping
 from uuid import uuid4
 
+from agente_pessoal.core.interpretation import RequestInterpretation
+
 
 class TaskStatus(StrEnum):
     PENDING = "pending"
@@ -13,6 +15,7 @@ class TaskStatus(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    AWAITING_INPUT = "awaiting_input"
 
 
 class StepStatus(StrEnum):
@@ -61,6 +64,7 @@ class Task:
     results: list[StepResult] = field(default_factory=list)
     error: str | None = None
     completed_at: datetime | None = None
+    interpretation: RequestInterpretation | None = None
 
     @property
     def description(self) -> str:

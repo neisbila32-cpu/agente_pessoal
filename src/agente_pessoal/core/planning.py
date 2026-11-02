@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Mapping, Protocol
 from uuid import uuid4
 
+from agente_pessoal.core.interpretation import RequestInterpretation
 from agente_pessoal.core.request import UserRequest
 
 
@@ -18,6 +19,7 @@ class PlannedStep:
 @dataclass(frozen=True, slots=True)
 class TaskPlan:
     steps: tuple[PlannedStep, ...]
+    interpretation: RequestInterpretation | None = None
 
 
 class Planner(Protocol):

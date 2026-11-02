@@ -1,6 +1,7 @@
 """Política explícita de permissões; não executa ações."""
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Iterable
 
@@ -16,6 +17,25 @@ class Permission(StrEnum):
 
 class PermissionDenied(PermissionError):
     """Lançada quando o contexto não concede a permissão solicitada."""
+
+
+@dataclass(frozen=True, slots=True)
+class PermissionGrant:
+    permission: Permission
+    granted: bool
+    granted_at: datetime | None = None
+    granted_by: str | None = None
+    revoked_at: datetime | None = None
+    revoked_by: str | None = None
+
+    @classmethod
+    def create(cls, permission: Permission, granted_by: str) -> "PermissionGrant":
+        return cls(
+            permission=permission,
+            granted=True,
+            granted_at=datetime.now(timezone.utc),
+            granted_by=granted_by,
+        )
 
 
 @dataclass(frozen=True, slots=True)

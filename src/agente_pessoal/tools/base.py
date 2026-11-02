@@ -1,9 +1,18 @@
 """Contrato de execução para ferramentas registradas no orquestrador."""
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Protocol
 
 from agente_pessoal.security import Permission
+
+
+@dataclass(frozen=True, slots=True)
+class ToolDescription:
+    """Informação pública de ferramenta que pode ser fornecida ao planejador."""
+
+    name: str
+    description: str
 
 
 class Tool(Protocol):
