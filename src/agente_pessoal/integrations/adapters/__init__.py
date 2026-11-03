@@ -2,6 +2,7 @@
 
 from agente_pessoal.integrations.adapters.codex import (
     CODEX_PROVIDER_ID,
+    CodexAccountCheck,
     CodexAccountState,
     CodexAuthError,
     CodexAuthService,
@@ -22,6 +23,7 @@ from agente_pessoal.integrations.adapters.gemini_cli import (
 
 __all__ = [
     "CODEX_PROVIDER_ID",
+    "CodexAccountCheck",
     "CodexAccountState",
     "CodexAuthError",
     "CodexAuthService",

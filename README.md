@@ -141,3 +141,21 @@ Execução textual real via `AgentExecutor` fica desativada nesta etapa. Embora 
 O registro e a detecção local do executável não autenticam uma conta. A documentação do CLI descreve o login interativo e execução headless, mas não oferece um contrato confiável para consultar a sessão Google sem acessar credenciais locais ou iniciar uma chamada de modelo. Por isso, `GeminiConnectionVerifier` informa a disponibilidade da CLI separadamente e mantém a conexão como `connection_required`/`unverified`, mesmo quando o executável existe. A extensão opcional de `ConnectionVerificationResult.verification_status` permite declarar esse estado desconhecido sem alterar o comportamento dos verificadores anteriores.
 
 Esta etapa não inicia subprocessos, não lê dados internos da Gemini CLI, não chama serviços externos e não executa prompts. Em particular, o modo headless aceita prompts e o CLI possui ferramentas que podem operar no ambiente local; integração de execução fica planejada até existir composição com caminho de executável confiável, argumentos fixos e validados, autorização explícita e aprovação que não permita alterações ou comandos automáticos. Não habilite modos de aprovação automática. O vínculo entre agente e conexão permanece apenas lógico e não concede permissões. As conexões Codex e Gemini usam identificadores de provedor distintos e não compartilham estado.
+
+## Diagnóstico operacional (M4.4)
+
+No Windows, com o projeto instalado no ambiente Python ativo, execute o relatório local no PowerShell:
+
+```powershell
+py -m agente_pessoal.integrations.diagnostics_cli
+```
+
+O relatório lista registro de provedores, versão/instalação do SDK Codex e seu runtime, presença da Gemini CLI no `PATH`, métodos de autenticação, autorização necessária, estado verificável e recursos ainda indisponíveis. `installed` significa apenas dependência encontrada; `authenticated` só é mostrado após consulta Codex autorizada; Gemini permanece `not_verified` porque a CLI não documenta uma consulta independente de sessão que possamos usar sem ler credenciais ou iniciar uma chamada de modelo. `operational` permanece `not_implemented` para ambos, pois esta etapa não integra executores de tarefas. Para automação de leitura do relatório, acrescente `--json`.
+
+Por padrão o comando não consulta contas, inicia login, chama modelos, executa subprocessos nem grava configurações ou SQLite. A consulta de conta Codex é opcional e requer dois argumentos explícitos: `py -m agente_pessoal.integrations.diagnostics_cli --verify-codex-account --allow-web-access`. O segundo argumento autoriza `web.access` apenas durante aquela execução; a autorização não é persistida. Sem os dois argumentos, a conta não é consultada. O SDK pode reutilizar a sessão oficial Codex configurada pelo usuário; o diagnóstico não lê seus arquivos internos nem apresenta identidade ou credenciais. Para Gemini, faça login manualmente na CLI oficial; a mera instalação continua sem comprovar autenticação.
+
+### Limites para futura execução de tarefas
+
+O SDK Codex documenta sandbox `read_only`, mas sua API pública de alto nível não fornece um manipulador de aprovação; o cliente de baixo nível aceita aprovações automaticamente em certos caminhos por padrão. Por isso, não há execução por Codex nesta etapa. [Documentação do SDK Codex](https://github.com/openai/codex/tree/main/sdk/python) · [Referência da API](https://github.com/openai/codex/blob/main/sdk/python/docs/api-reference.md)
+
+A Gemini CLI oferece prompts headless, ferramentas, modos de aprovação e sandbox. O modo `plan` é descrito como somente leitura, mas a documentação atual diz que esse modo ainda está em desenvolvimento; os modos `auto_edit` e `yolo` aprovam ações automaticamente. O Agente Pessoal não inicia esses modos nem os usa como integração de execução. Uma etapa futura precisa limitar ferramentas e caminhos, validar argumentos, manter aprovação explícita e usar isolamento confiável antes de encaminhar tarefas. [Opções oficiais da CLI](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/cli-reference.md) · [Configuração e aprovação](https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md)
