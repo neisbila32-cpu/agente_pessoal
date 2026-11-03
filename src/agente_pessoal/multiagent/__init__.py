@@ -20,6 +20,16 @@ from agente_pessoal.multiagent.registry import (
     AgentRegistryError,
     DuplicateAgentError,
 )
+from agente_pessoal.multiagent.workflow import (
+    AgentTask,
+    AgentTaskResult,
+    AgentTaskStatus,
+    MultiAgentPlan,
+    MultiAgentResult,
+    MultiAgentStatus,
+    MultiAgentWorkflow,
+    TaskDependency,
+)
 
 __all__ = [
     "AgentDefinition",
@@ -32,9 +42,17 @@ __all__ = [
     "AgentNotFoundError",
     "AgentRegistry",
     "AgentRegistryError",
+    "AgentTask",
+    "AgentTaskResult",
+    "AgentTaskStatus",
     "DuplicateAgentError",
     "DuplicateExecutorError",
     "ExecutorNotFoundError",
     "ExecutorRegistryError",
     "MaestroCoordinator",
+    "MultiAgentPlan",
+    "MultiAgentResult",
+    "MultiAgentStatus",
+    "MultiAgentWorkflow",
+    "TaskDependency",
 ]
