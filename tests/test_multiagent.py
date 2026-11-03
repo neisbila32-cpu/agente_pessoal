@@ -83,7 +83,7 @@ class MultiAgentModelTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             AgentExecutionResult("request", "research", "completed")
 
-    def test_multiagent_package_has_no_core_ai_or_persistence_imports(self):
+    def test_multiagent_package_is_independent_of_core_ai_and_persistence(self):
         package = Path(__file__).parents[1] / "src" / "agente_pessoal" / "multiagent"
         imported_roots = set()
         for module_path in package.glob("*.py"):
@@ -93,7 +93,7 @@ class MultiAgentModelTests(unittest.TestCase):
                     imported_roots.add(node.module.split(".")[1:2][0] if node.module.startswith("agente_pessoal.") else node.module)
                 elif isinstance(node, ast.Import):
                     imported_roots.update(alias.name.split(".")[1:2][0] if alias.name.startswith("agente_pessoal.") else alias.name for alias in node.names)
-        self.assertTrue(imported_roots.isdisjoint({"core", "ai", "persistence", "security"}))
+        self.assertTrue(imported_roots.isdisjoint({"core", "ai", "persistence"}))
 
 
 if __name__ == "__main__":

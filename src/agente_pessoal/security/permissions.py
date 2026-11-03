@@ -8,6 +8,7 @@ from typing import Iterable
 
 class Permission(StrEnum):
     FILE_READ = "file.read"
+    AGENT_EXECUTE = "agent.execute"
     FILE_WRITE = "file.write"
     COMMAND_EXECUTE = "command.execute"
     APP_CONTROL = "app.control"
