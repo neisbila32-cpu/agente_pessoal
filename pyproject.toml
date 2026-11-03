@@ -9,7 +9,7 @@ description = "Estrutura inicial de um agente pessoal para Windows."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
-dependencies = ["openai>=1.68,<3"]
+dependencies = ["openai>=1.68,<3", "openai-codex>=0.163.0,<0.164.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

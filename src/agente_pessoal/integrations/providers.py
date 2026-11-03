@@ -18,6 +18,7 @@ class ProviderIntegrationType(StrEnum):
 
 class AuthenticationMethod(StrEnum):
     BROWSER_LOGIN = "browser_login"
+    DEVICE_CODE_LOGIN = "device_code_login"
     OFFICIAL_CLI_SDK = "official_cli_sdk"
     API_KEY = "api_key"
     LOCAL_NO_AUTH = "local_no_auth"

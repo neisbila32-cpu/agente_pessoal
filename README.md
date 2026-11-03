@@ -111,3 +111,25 @@ Os testes do adaptador usam um cliente controlado e não dependem de rede ou cre
 - O banco não tem criptografia, expurgo/retention ou migrações versionadas.
 
 Próxima etapa recomendada: revisar o contrato de entrada multimodal e o desenho de aprovação humana antes de registrar ferramentas com efeitos reais. Depois, começar por uma ferramenta de baixo risco, com argumentos estritos, autorização explícita e testes de segurança.
+
+## Integração oficial com Codex (M4.2)
+
+O adaptador opcional `agente_pessoal.integrations.adapters.codex` usa o SDK Python oficial `openai-codex` (`>=0.163.0,<0.164.0`) para consultar a sessão Codex existente e iniciar login oficial pelo navegador ou código de dispositivo. O pacote é importado e o runtime criado somente quando uma operação é chamada; importar o módulo ou registrar `openai-codex` como provedor não inicia login, rede ou prompts. As operações requerem uma `AuthorizationContext` com `Permission.WEB_ACCESS`, sem concessões automáticas. O helper `register_codex_provider(ProviderRegistry())` registra a definição de provedor explicitamente; depois, `ConnectionRegistry`, `ConnectionVerifierRegistry` e `ConnectionService` podem verificar a conta usando `CodexConnectionVerifier`. A conexão só recebe status `connected` quando `Codex.account()` retorna uma conta. Falhas públicas não contêm mensagens brutas do SDK.
+
+Para instalar, use o fluxo normal do projeto (`py -m pip install -e .`). Uma verificação manual de login, iniciada somente por decisão explícita do usuário, pode ser feita em uma sessão Python interativa:
+
+```python
+from agente_pessoal.integrations.adapters.codex import CodexAuthService, CodexLoginMethod
+from agente_pessoal.security import AuthorizationContext, Permission
+
+authorization = AuthorizationContext.from_permissions((Permission.WEB_ACCESS,))
+codex = CodexAuthService()
+login = codex.start_login(CodexLoginMethod.BROWSER, authorization)
+print("Abra manualmente:", login.verification_url)
+print("Resultado:", codex.finish_login(login.session_id, authorization).state)
+print("Estado da conta:", codex.check_account(authorization).state)
+```
+
+Também é possível substituir `BROWSER` por `DEVICE_CODE`; nesse fluxo, exiba `verification_url` e `user_code` ao usuário. O teste manual não é executado automaticamente e está sujeito aos limites e permissões da conta ChatGPT. O adaptador reutiliza a sessão gerenciada pelo Codex e não lê arquivos internos de autenticação, solicita senha, persiste tokens ou copia credenciais ao SQLite.
+
+Execução textual real via `AgentExecutor` fica desativada nesta etapa. Embora o SDK exponha execução em sandbox somente leitura, a API pública de alto nível não aceita um manipulador de aprovação; o cliente subjacente documenta aprovação automática de solicitações de execução de comandos/alteração de arquivos por padrão. Essa combinação não permite garantir o bloqueio de ferramentas e escalonamento exigidos pelo projeto. A autenticação e a verificação de conta podem ser testadas manualmente; o primeiro prompt supervisionado aguarda uma API pública que forneça controles de aprovação adequados. Não há chamadas reais ao Codex nos testes.
