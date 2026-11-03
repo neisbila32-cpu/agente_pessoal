@@ -20,6 +20,7 @@ src/agente_pessoal/
 ├── audit/             # Eventos estruturados, sem prompt/argumentos/resultados
 ├── config/            # Modelo, timeout e limites configuráveis
 ├── core/              # Orquestração, execução, planejamento e ciclo de vida
+├── integrations/      # Catálogo de provedores e conexões de IA
 ├── multiagent/        # Registro de agentes e contratos de execução futura
 ├── persistence/       # SQLite para tarefas, auditoria e permissões
 ├── security/          # Concessões persistentes, negação padrão e aprovação
@@ -80,6 +81,14 @@ O núcleo continua desacoplado: recebe qualquer implementação de `ModelProvide
 O pacote `agente_pessoal.multiagent` adiciona `AgentDefinition`, um catálogo `AgentRegistry` em memória e contratos tipados `AgentExecutionRequest`/`AgentExecutionResult`. O registro permite incluir, consultar, listar e habilitar ou desabilitar definições; IDs repetidos e referências inexistentes geram erros tipados. O `AgentExecutor` define a porta para um executor futuro e permanece separado do `ModelProvider` existente em `agente_pessoal.ai`, que representa provedores de modelos. A composição da aplicação pode manter ambos os contratos disponíveis ao lado de `TaskManager` e `TaskOrchestrator`; nenhum deles foi alterado.
 
 Esta etapa não carrega adaptadores, chama modelos ou executa agentes. Não há armazenamento persistente de definições, interface gráfica, paralelismo ou novas permissões. A execução mediada pelo núcleo, aprovação humana e persistência do registro ficam para etapas futuras; a política de negação padrão e o esquema SQLite existente permanecem intactos.
+
+## Provedores e conexões de IA (M4.1)
+
+O pacote `agente_pessoal.integrations` mantém um catálogo em memória de provedores (`ProviderDefinition`/`ProviderRegistry`), registros de conexão (`ProviderConnection`), verificadores injetados e vínculos lógicos entre uma conexão e um `AgentDefinition`. Os papéis são separados: o provedor descreve o serviço e suas capacidades; a conexão representa o estado de uma conta; o agente continua no `AgentRegistry`; executores e o `MaestroCoordinator` continuam responsáveis pela execução e coordenação. Vincular uma conexão não concede permissões.
+
+Os contratos reconhecem login oficial pelo navegador quando o provedor o declara, autenticação por CLI/SDK oficial, chave de API e modelo local sem autenticação remota. A lista é declarada por provedor; o sistema não presume disponibilidade de OAuth para terceiros. Não há login implementado, entrada de senha, captura de cookies, reutilização de tokens ou adaptadores reais. Os verificadores usados nos testes são simulados.
+
+Cadastrar um provedor não significa que uma conta esteja conectada ou autenticada. Uma conexão registrada inicia como `connection_required` e `unverified`; o status informado e o resultado de verificação são campos distintos. Não existem campos de credencial nos modelos, nem armazenamento em SQLite ou arquivos. Uma referência opcional de conta deve ser opaca e não sensível. Os registros são voláteis e futuros segredos exigirão armazenamento seguro do sistema operacional.
 
 ## Persistência e auditoria
 
