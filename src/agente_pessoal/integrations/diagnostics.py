@@ -178,6 +178,7 @@ class IntegrationDiagnostics:
         )
 
         auth_status = AuthenticationStatus.NOT_CHECKED
+        codex_service_available: bool | None = None
         permission = PermissionRequirement(
             Permission.WEB_ACCESS.value,
             "Consulta explícita da conta Codex pelo SDK oficial.",
@@ -192,7 +193,8 @@ class IntegrationDiagnostics:
                 auth_status = AuthenticationStatus.NOT_CHECKED
             else:
                 try:
-                    if not self._codex_auth.is_available():
+                    codex_service_available = self._codex_auth.is_available()
+                    if not codex_service_available:
                         auth_status = AuthenticationStatus.NOT_CHECKED
                     else:
                         state = self._codex_auth.check_account(authorization).state
@@ -213,10 +215,16 @@ class IntegrationDiagnostics:
             actions.append("Instale as dependências do projeto com `py -m pip install -e .`.")
         elif sdk_status is DependencyStatus.INCOMPATIBLE:
             actions.append("Instale uma versão openai-codex compatível com a faixa declarada pelo projeto.")
+        elif sdk_status is DependencyStatus.UNKNOWN:
+            actions.append("Não foi possível determinar a versão instalada do SDK Codex.")
         if runtime_status is DependencyStatus.MISSING:
             actions.append("Reinstale as dependências do projeto para obter o runtime Codex pareado.")
         elif runtime_status is DependencyStatus.INCOMPATIBLE:
             actions.append("Reinstale o runtime Codex na mesma versão estável do SDK openai-codex.")
+        elif runtime_status is DependencyStatus.UNKNOWN:
+            actions.append("Não foi possível confirmar a versão ou presença do runtime Codex.")
+        if check_account and codex_service_available is False:
+            actions.append("O SDK/runtime Codex não está disponível para consultar a conta nesta execução.")
         if check_account and auth_status is AuthenticationStatus.PERMISSION_REQUIRED:
             actions.append("Conceda web.access explicitamente na aplicação e repita a consulta opcional.")
         elif check_account and auth_status is AuthenticationStatus.NOT_AUTHENTICATED:
@@ -227,7 +235,7 @@ class IntegrationDiagnostics:
                 "única e explicitamente autorizada."
             )
         if not actions:
-            actions.append("A verificação de conta foi concluída; execução de tarefas continua indisponível.")
+            actions.append("Diagnóstico concluído; execução de tarefas continua indisponível.")
 
         methods = self._methods_for(provider)
         return ProviderDiagnostic(
@@ -270,6 +278,8 @@ class IntegrationDiagnostics:
             actions.append("Registre explicitamente o provedor Gemini na composição da aplicação.")
         if availability is GeminiCliAvailability.NOT_INSTALLED:
             actions.append("Instale a CLI oficial pelo guia de instalação do Gemini CLI.")
+        elif availability is GeminiCliAvailability.UNKNOWN:
+            actions.append("Não foi possível confirmar a CLI; verifique a instalação e o PATH do usuário.")
         actions.append("Para autenticar, inicie `gemini` e conclua o login Google na própria CLI.")
         actions.append("A conexão permanece não verificada; o diagnóstico não lê credenciais nem executa prompts.")
         return ProviderDiagnostic(
