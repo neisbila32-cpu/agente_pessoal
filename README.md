@@ -20,6 +20,7 @@ src/agente_pessoal/
 ├── audit/             # Eventos estruturados, sem prompt/argumentos/resultados
 ├── config/            # Modelo, timeout e limites configuráveis
 ├── core/              # Orquestração, execução, planejamento e ciclo de vida
+├── multiagent/        # Registro de agentes e contratos de execução futura
 ├── persistence/       # SQLite para tarefas, auditoria e permissões
 ├── security/          # Concessões persistentes, negação padrão e aprovação
 └── tools/             # Contratos de ferramentas; sem ferramentas reais
@@ -73,6 +74,12 @@ Esse teste envia um prompt à API e pode consumir cota. Não é executado pela s
 O adaptador configura o endpoint `https://integrate.api.nvidia.com/v1`, encaminha o modelo e o timeout configurados, valida o conteúdo e limita o tamanho da resposta. Timeout, indisponibilidade e rejeições HTTP são convertidos em erros tipados sem repassar mensagens potencialmente sensíveis. O `AIPlanner` é o único responsável por tentativas; o SDK é configurado com `max_retries=0` para evitar repetição duplicada.
 
 O núcleo continua desacoplado: recebe qualquer implementação de `ModelProvider`, sem importar o cliente NVIDIA. Para conectar a NVIDIA ao planejador, injete `NvidiaNimProvider()` na construção de `AIPlanner`, mantendo o `ToolExecutor` e suas verificações de autorização.
+
+## Arquitetura multiagente (fundação M1)
+
+O pacote `agente_pessoal.multiagent` adiciona `AgentDefinition`, um catálogo `AgentRegistry` em memória e contratos tipados `AgentExecutionRequest`/`AgentExecutionResult`. O registro permite incluir, consultar, listar e habilitar ou desabilitar definições; IDs repetidos e referências inexistentes geram erros tipados. O `AgentExecutor` define a porta para um executor futuro e permanece separado do `ModelProvider` existente em `agente_pessoal.ai`, que representa provedores de modelos. A composição da aplicação pode manter ambos os contratos disponíveis ao lado de `TaskManager` e `TaskOrchestrator`; nenhum deles foi alterado.
+
+Esta etapa não carrega adaptadores, chama modelos ou executa agentes. Não há armazenamento persistente de definições, interface gráfica, paralelismo ou novas permissões. A execução mediada pelo núcleo, aprovação humana e persistência do registro ficam para etapas futuras; a política de negação padrão e o esquema SQLite existente permanecem intactos.
 
 ## Persistência e auditoria
 
