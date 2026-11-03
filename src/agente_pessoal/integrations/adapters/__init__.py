@@ -12,6 +12,13 @@ from agente_pessoal.integrations.adapters.codex import (
     CodexProviderUnavailableError,
     register_codex_provider,
 )
+from agente_pessoal.integrations.adapters.gemini_cli import (
+    GEMINI_PROVIDER_ID,
+    GeminiCliAdapter,
+    GeminiCliAvailability,
+    GeminiConnectionVerifier,
+    register_gemini_provider,
+)
 
 __all__ = [
     "CODEX_PROVIDER_ID",
@@ -23,5 +30,10 @@ __all__ = [
     "CodexLoginResult",
     "CodexLoginState",
     "CodexProviderUnavailableError",
+    "GEMINI_PROVIDER_ID",
+    "GeminiCliAdapter",
+    "GeminiCliAvailability",
+    "GeminiConnectionVerifier",
     "register_codex_provider",
+    "register_gemini_provider",
 ]

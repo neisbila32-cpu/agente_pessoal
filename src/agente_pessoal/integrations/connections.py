@@ -149,12 +149,17 @@ class ConnectionVerificationResult:
     status: ConnectionStatus
     availability: ProviderAvailability
     capabilities: tuple[ProviderCapability, ...] = ()
+    verification_status: ConnectionVerificationStatus | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.status, ConnectionStatus):
             raise ValueError("status inválido.")
         if not isinstance(self.availability, ProviderAvailability):
             raise ValueError("availability inválida.")
+        if self.verification_status is not None and not isinstance(
+            self.verification_status, ConnectionVerificationStatus
+        ):
+            raise ValueError("verification_status inválido.")
         capabilities = tuple(self.capabilities)
         if any(not isinstance(item, ProviderCapability) for item in capabilities):
             raise ValueError("capabilities deve conter capacidades tipadas.")
@@ -235,7 +240,7 @@ class ConnectionService:
                 verification_status=ConnectionVerificationStatus.FAILED,
             )
 
-        verification_status = (
+        verification_status = result.verification_status or (
             ConnectionVerificationStatus.FAILED
             if result.status is ConnectionStatus.ERROR
             else ConnectionVerificationStatus.VERIFIED
