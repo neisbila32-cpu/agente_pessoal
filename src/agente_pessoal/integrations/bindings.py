@@ -56,9 +56,22 @@ class AgentConnectionBindingRegistry:
         except KeyError:
             raise BindingNotFoundError(binding_id) from None
 
+    def unregister(self, binding_id: str) -> AgentConnectionBinding:
+        binding = self.get(binding_id)
+        del self._bindings[binding_id]
+        return binding
+
     def list_bindings(self, agent_id: str | None = None) -> tuple[AgentConnectionBinding, ...]:
         bindings = self._bindings.values()
         if agent_id is not None:
             self._agents.get(agent_id)
             bindings = (item for item in bindings if item.agent_id == agent_id)
         return tuple(bindings)
+
+    def remove_for_agent(self, agent_id: str) -> tuple[AgentConnectionBinding, ...]:
+        """Remove vínculos em memória para exclusão controlada do agente."""
+        self._agents.get(agent_id)
+        removed = tuple(item for item in self._bindings.values() if item.agent_id == agent_id)
+        for binding in removed:
+            del self._bindings[binding.id]
+        return removed

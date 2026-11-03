@@ -176,3 +176,13 @@ Para autenticar Codex, escolha navegador ou código de dispositivo, selecione **
 **Meus agentes** lista três agentes identificados como demonstrativos e permite cadastrar agentes próprios e alterar estado ou vínculo em memória. As definições desaparecem ao encerrar a aplicação; nenhum agente recebe permissões ou executor real por causa de um vínculo. **Maestro e fluxos** executa apenas três etapas determinísticas sinalizadas `SIMULAÇÃO`; a confirmação concede `agent.execute` somente ao fluxo simulado em memória.
 
 Diagnóstico de permissões explica o uso temporário de `web.access` e `agent.execute`. A aplicação não grava credenciais, não altera SQLite, não acessa arquivos pessoais, não executa comandos e não envia solicitações de texto a contas Codex/Gemini. A interface depende de Tkinter/ttk da biblioteca padrão; não adiciona dependências.
+
+## Persistência das configurações da interface (M5.2)
+
+As definições de agentes pessoais e seus vínculos lógicos com conexões agora são salvos no SQLite local. O caminho usa `AGENTE_PESSOAL_DB_PATH` quando configurado; caso contrário, segue `Settings.database_path` (`~/.agente_pessoal/agente_pessoal.sqlite3`). As tabelas da interface são adicionadas por uma migração versionada (`PRAGMA user_version = 1`), preservando as tabelas e os registros existentes de tarefas, auditoria e permissões.
+
+São persistidos somente ID, nome, descrição, capacidades, estado habilitado, pares agente/conexão e o tamanho da janela. Essa é a única preferência atual da interface; posições de tela não são guardadas. Agentes demonstrativos continuam separados: são recriados a cada inicialização e não são gravados. A interface permite editar e excluir apenas agentes pessoais; excluir um agente pessoal remove seus vínculos locais.
+
+Credenciais, tokens, cookies, senhas, autorizações temporárias e estado de autenticação não são persistidos. Depois de reiniciar, uma conexão não é presumida autenticada; as verificações existentes continuam explícitas. Restaurar um agente ou vínculo não concede permissões, não registra executor real e não habilita execução real. Registros inválidos, agentes duplicados e vínculos com conexões ausentes são ignorados com avisos locais, sem impedir que a janela abra. Se o banco estiver indisponível ou em uma versão futura, a interface inicia sem persistência e informa que alterações serão temporárias.
+
+Para iniciar no Windows, use os mesmos comandos de M5.1 (`py -m pip install -e .` e `py -m agente_pessoal.desktop`). As configurações são gravadas à medida que são alteradas; mantenha um backup do arquivo SQLite se quiser preservar essa configuração entre reinstalações.

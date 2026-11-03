@@ -5,6 +5,7 @@ from __future__ import annotations
 import queue
 import threading
 import tkinter as tk
+import re
 import webbrowser
 from tkinter import messagebox, ttk
 from typing import Callable
@@ -14,6 +15,9 @@ from agente_pessoal.desktop.services import (
     DesktopApplicationServices,
 )
 from agente_pessoal.integrations.adapters.codex import CodexAccountState, CodexLoginMethod
+from agente_pessoal.config.settings import Settings
+from agente_pessoal.persistence import SQLiteStore
+from agente_pessoal.persistence import DesktopPreferenceRecord
 
 
 _PAGE_TITLES = {
@@ -30,9 +34,35 @@ class DesktopWindow(tk.Tk):
 
     def __init__(self, controller: DesktopController | None = None) -> None:
         super().__init__()
-        self.controller = controller or DesktopController(DesktopApplicationServices())
+        self._owned_store: SQLiteStore | None = None
+        if controller is None:
+            store: SQLiteStore | None = None
+            try:
+                store = SQLiteStore(Settings.from_environment().database_path)
+                services = DesktopApplicationServices(settings_store=store)
+                self._owned_store = store
+            except Exception:
+                if store is not None:
+                    store.close()
+                services = DesktopApplicationServices(
+                    settings_warnings=(
+                        "O banco local de configurações está indisponível; as mudanças desta sessão não serão preservadas.",
+                    )
+                )
+            controller = DesktopController(services)
+        self.controller = controller
         self.title("Agente Pessoal")
         self.geometry("1120x740")
+        if self._owned_store is not None:
+            try:
+                preference = next(
+                    item
+                    for item in self._owned_store.load_desktop_settings().preferences
+                    if item.key == "window_size"
+                )
+                self.geometry(preference.value)
+            except Exception:
+                pass
         self.minsize(900, 620)
         self.configure(bg="#f3f5f8")
         self._results: queue.Queue[tuple[Callable, bool, object]] = queue.Queue()
@@ -55,6 +85,21 @@ class DesktopWindow(tk.Tk):
         self._setup_style()
         self._build_shell()
         self._show_page(DesktopPage.HOME)
+        self.protocol("WM_DELETE_WINDOW", self._close_window)
+
+    def _close_window(self) -> None:
+        if self._owned_store is not None:
+            match = re.match(r"^(\d{3,4}x\d{3,4})", self.geometry())
+            if match is not None:
+                try:
+                    self._owned_store.save_desktop_preference(
+                        DesktopPreferenceRecord("window_size", match.group(1))
+                    )
+                except Exception:
+                    pass
+            self._owned_store.close()
+            self._owned_store = None
+        self.destroy()
 
     def _setup_style(self) -> None:
         style = ttk.Style(self)
@@ -334,8 +379,8 @@ class DesktopWindow(tk.Tk):
         pane.grid(row=0, column=0, sticky="nsew")
         pane.columnconfigure(0, weight=1)
         pane.rowconfigure(0, weight=1)
-        tree = ttk.Treeview(pane, columns=("name", "description", "capabilities", "state", "binding"), show="headings", height=9)
-        for column, title, width in (("name", "Agente", 170), ("description", "Função", 240), ("capabilities", "Capacidades", 170), ("state", "Estado", 110), ("binding", "Vínculo", 175)):
+        tree = ttk.Treeview(pane, columns=("kind", "name", "description", "capabilities", "state", "binding"), show="headings", height=9)
+        for column, title, width in (("kind", "Tipo", 105), ("name", "Agente", 150), ("description", "Função", 210), ("capabilities", "Capacidades", 150), ("state", "Estado", 105), ("binding", "Vínculo", 145)):
             tree.heading(column, text=title)
             tree.column(column, width=width, anchor="w")
         tree.grid(row=0, column=0, sticky="nsew")
@@ -345,7 +390,9 @@ class DesktopWindow(tk.Tk):
         actions.grid(row=1, column=0, sticky="ew", pady=9)
         ttk.Button(actions, text="Habilitar selecionado", command=lambda: self._toggle_agent(True)).pack(side="left", padx=(0, 7))
         ttk.Button(actions, text="Desabilitar selecionado", command=lambda: self._toggle_agent(False)).pack(side="left")
-        form = ttk.LabelFrame(pane, text="Cadastrar agente em memória", padding=12)
+        ttk.Button(actions, text="Editar selecionado", command=self._edit_selected_agent).pack(side="left", padx=(12, 7))
+        ttk.Button(actions, text="Excluir pessoal…", command=self._delete_selected_agent).pack(side="left")
+        form = ttk.LabelFrame(pane, text="Agente pessoal (configuração local)", padding=12)
         form.grid(row=2, column=0, sticky="ew", pady=(5, 0))
         for col in range(4):
             form.columnconfigure(col, weight=1)
@@ -355,7 +402,8 @@ class DesktopWindow(tk.Tk):
             ttk.Entry(form, textvariable=variable).grid(row=1, column=index, sticky="ew", padx=4, pady=(3, 8))
         ttk.Label(form, text="Vincular provedor (opcional)").grid(row=2, column=0, sticky="w", padx=4)
         ttk.Combobox(form, textvariable=self._agent_provider, values=("Sem vínculo", "OpenAI Codex", "Google Gemini CLI"), state="readonly").grid(row=3, column=0, sticky="ew", padx=4, pady=(3, 8))
-        ttk.Button(form, text="Cadastrar", style="Primary.TButton", command=self._add_agent).grid(row=3, column=1, sticky="w", padx=4)
+        self._agent_save_button = ttk.Button(form, text="Cadastrar", style="Primary.TButton", command=self._add_agent)
+        self._agent_save_button.grid(row=3, column=1, sticky="w", padx=4)
         ttk.Label(form, text="Vínculo é apenas lógico; não adiciona executor nem permissão.", style="CardText.TLabel").grid(row=3, column=2, columnspan=2, sticky="w", padx=4)
         binding = ttk.Frame(pane, style="App.TFrame")
         binding.grid(row=3, column=0, sticky="ew", pady=(10, 0))
@@ -372,7 +420,7 @@ class DesktopWindow(tk.Tk):
             links = self.controller.services.bindings_for(agent.id)
             provider_id = connections.get(links[-1].connection_id) if links else None
             binding = {"openai-codex": "Codex", "google-gemini-cli": "Gemini CLI"}.get(provider_id, "Sem vínculo")
-            self._agent_tree.insert("", "end", iid=agent.id, values=(agent.name, agent.description, ", ".join(agent.capabilities), "Habilitado" if agent.enabled else "Desabilitado", binding))
+            self._agent_tree.insert("", "end", iid=agent.id, values=("Pessoal" if self.controller.is_personal_agent(agent.id) else "Demonstração", agent.name, agent.description, ", ".join(agent.capabilities), "Habilitado" if agent.enabled else "Desabilitado", binding))
 
     def _selected_agent_id(self) -> str | None:
         if not hasattr(self, "_agent_tree"):
@@ -389,6 +437,65 @@ class DesktopWindow(tk.Tk):
             self.controller.set_agent_enabled(agent_id, enabled)
         except Exception:
             messagebox.showerror("Meus agentes", "Não foi possível alterar o estado do agente.", parent=self)
+            return
+        self._fill_agents_tree()
+
+    def _edit_selected_agent(self) -> None:
+        agent_id = self._selected_agent_id()
+        if not agent_id:
+            messagebox.showinfo("Meus agentes", "Selecione um agente pessoal para editar.", parent=self)
+            return
+        if not self.controller.is_personal_agent(agent_id):
+            messagebox.showinfo("Meus agentes", "Agentes demonstrativos não podem ser editados.", parent=self)
+            return
+        agent = next(item for item in self.controller.services.list_agents() if item.id == agent_id)
+        self._agent_id.set(agent.id)
+        self._agent_name.set(agent.name)
+        self._agent_description.set(agent.description)
+        self._agent_capabilities.set(", ".join(agent.capabilities))
+        self._editing_agent_id = agent.id
+        self._agent_save_button.configure(text="Salvar alterações", command=self._save_agent_changes)
+
+    def _save_agent_changes(self) -> None:
+        agent_id = getattr(self, "_editing_agent_id", None)
+        if not agent_id:
+            return
+        try:
+            self.controller.update_agent(
+                agent_id,
+                name=self._agent_name.get(),
+                description=self._agent_description.get(),
+                capabilities_text=self._agent_capabilities.get(),
+            )
+        except (ValueError, TypeError) as exc:
+            messagebox.showerror("Meus agentes", str(exc), parent=self)
+            return
+        except Exception:
+            messagebox.showerror("Meus agentes", "Não foi possível salvar as alterações.", parent=self)
+            return
+        self._editing_agent_id = None
+        self._agent_id.set("")
+        self._agent_name.set("")
+        self._agent_description.set("")
+        self._agent_capabilities.set("texto")
+        self._agent_save_button.configure(text="Cadastrar", command=self._add_agent)
+        self._fill_agents_tree()
+
+    def _delete_selected_agent(self) -> None:
+        agent_id = self._selected_agent_id()
+        if not agent_id or not self.controller.is_personal_agent(agent_id):
+            messagebox.showinfo("Meus agentes", "Selecione um agente pessoal para excluir.", parent=self)
+            return
+        if not messagebox.askyesno(
+            "Excluir agente pessoal",
+            "Excluir a definição e os vínculos locais deste agente? Esta ação não pode ser desfeita.",
+            parent=self,
+        ):
+            return
+        try:
+            self.controller.delete_agent(agent_id)
+        except Exception:
+            messagebox.showerror("Meus agentes", "Não foi possível excluir o agente.", parent=self)
             return
         self._fill_agents_tree()
 
@@ -489,7 +596,12 @@ class DesktopWindow(tk.Tk):
         ttk.Label(pane, text="Permissões nesta interface", style="CardTitle.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 8))
         text = tk.Text(pane, wrap="word", height=12, relief="flat", padx=14, pady=12, font=("Segoe UI", 10), bg="#ffffff", fg="#29384d")
         text.grid(row=1, column=0, sticky="nsew")
-        text.insert("1.0", "agent.execute: não concedida permanentemente; solicitada apenas para executar a demonstração local quando iniciada.\n\nweb.access: não concedida permanentemente; solicitada para iniciar login ou verificar conta Codex.\n\nCodex: verificação de conta usa o SDK oficial somente após confirmação explícita.\n\nGemini CLI: login deve ser feito manualmente na ferramenta oficial; autenticação permanece não verificada.\n\nExecutores de provedores: desativados. A associação de agente a provedor não concede permissões.\n\nDiagnóstico local: detecta instalação e disponibilidade sem chamadas de rede; execute manualmente em Contas e integrações.")
+        text_content = "Agentes pessoais e vínculos são salvos localmente no SQLite configurado pelo aplicativo; agentes demonstrativos são recriados e nunca gravados.\n\nagent.execute: não concedida permanentemente; solicitada apenas para executar a demonstração local quando iniciada.\n\nweb.access: não concedida permanentemente; solicitada para iniciar login ou verificar conta Codex.\n\nCodex: a verificação de conta usa o SDK oficial somente após confirmação explícita. Nenhuma conta é considerada autenticada após reiniciar.\n\nGemini CLI: login deve ser feito manualmente na ferramenta oficial; autenticação permanece não verificada.\n\nExecutores de provedores: desativados. A associação de agente a provedor não concede permissões.\n\nDiagnóstico local: detecta instalação e disponibilidade sem chamadas de rede; execute manualmente em Contas e integrações."
+        if self.controller.services.settings_warnings:
+            text_content += "\n\nAvisos das configurações locais:\n" + "\n".join(
+                f"• {warning}" for warning in self.controller.services.settings_warnings
+            )
+        text.insert("1.0", text_content)
         text.configure(state="disabled")
         ttk.Button(pane, text="Abrir contas e integrações", command=lambda: self._show_page(DesktopPage.INTEGRATIONS)).grid(row=2, column=0, sticky="w", pady=(12, 0))
 

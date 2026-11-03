@@ -165,6 +165,23 @@ class DesktopController:
     def set_agent_enabled(self, agent_id: str, enabled: bool):
         return self.services.set_agent_enabled(agent_id, enabled)
 
+    def update_agent(self, agent_id: str, *, name: str, description: str, capabilities_text: str):
+        capabilities = tuple(item.strip() for item in capabilities_text.split(",") if item.strip())
+        if not capabilities:
+            raise ValueError("Informe ao menos uma capacidade.")
+        return self.services.update_agent(
+            agent_id,
+            name=name.strip(),
+            description=description.strip(),
+            capabilities=capabilities,
+        )
+
+    def delete_agent(self, agent_id: str):
+        return self.services.delete_agent(agent_id)
+
+    def is_personal_agent(self, agent_id: str) -> bool:
+        return self.services.is_personal_agent(agent_id)
+
     def bind_agent(self, agent_id: str, provider_id: str):
         return self.services.bind_agent(agent_id, provider_id)
 

@@ -40,6 +40,18 @@ class AgentRegistry:
     def list_agents(self) -> tuple[AgentDefinition, ...]:
         return tuple(self._agents.values())
 
+    def update(self, agent: AgentDefinition) -> AgentDefinition:
+        if not isinstance(agent, AgentDefinition):
+            raise TypeError("agent deve ser um AgentDefinition.")
+        self.get(agent.id)
+        self._agents[agent.id] = agent
+        return agent
+
+    def delete(self, agent_id: str) -> AgentDefinition:
+        current = self.get(agent_id)
+        del self._agents[agent_id]
+        return current
+
     def enable(self, agent_id: str) -> AgentDefinition:
         return self._set_enabled(agent_id, True)
 

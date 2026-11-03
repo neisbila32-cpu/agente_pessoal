@@ -1,6 +1,6 @@
 """Composição dos serviços usados pela interface desktop."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from agente_pessoal.integrations import (
     AgentConnectionBindingRegistry,
@@ -43,6 +43,7 @@ from agente_pessoal.multiagent import (
     TaskDependency,
     MaestroCoordinator,
 )
+from agente_pessoal.persistence import DesktopAgentBindingRecord, DesktopAgentRecord, SQLiteStore
 from agente_pessoal.security import (
     AuthorizationContext,
     Permission,
@@ -100,6 +101,8 @@ class DesktopApplicationServices:
         codex_auth: CodexAuthService | None = None,
         gemini_cli: GeminiCliAdapter | None = None,
         diagnostics: IntegrationDiagnostics | None = None,
+        settings_store: SQLiteStore | None = None,
+        settings_warnings: tuple[str, ...] = (),
         include_demo_agents: bool = True,
     ) -> None:
         self.providers = provider_registry or ProviderRegistry()
@@ -123,8 +126,13 @@ class DesktopApplicationServices:
         self.agents = agent_registry or AgentRegistry()
         self.bindings = binding_registry or AgentConnectionBindingRegistry(self.agents, self.connections)
         self.executors = executor_registry or AgentExecutorRegistry()
+        self.settings_store = settings_store
+        self.settings_warnings = list(settings_warnings)
+        self._personal_agent_ids: set[str] = set()
         if include_demo_agents:
             self._register_demo_agents()
+        if self.settings_store is not None:
+            self._restore_personal_settings()
 
         self.diagnostics = diagnostics or IntegrationDiagnostics(
             self.providers,
@@ -168,6 +176,47 @@ class DesktopApplicationServices:
             except LookupError:
                 self.executors.register(adapter_id, _DemonstrationExecutor(name))
 
+    def _restore_personal_settings(self) -> None:
+        try:
+            snapshot = self.settings_store.load_desktop_settings()
+        except Exception:
+            self.settings_warnings.append(
+                "As configurações locais não puderam ser carregadas; a aplicação iniciou sem elas."
+            )
+            return
+        self.settings_warnings.extend(snapshot.issues)
+        demo_ids = {item[0] for item in self.DEMO_AGENTS}
+        for record in snapshot.agents:
+            try:
+                if record.id in demo_ids:
+                    raise ValueError("ID reservado para agente demonstrativo.")
+                self.agents.register(
+                    AgentDefinition(
+                        id=record.id,
+                        name=record.name,
+                        description=record.description,
+                        capabilities=record.capabilities,
+                        adapter_id=f"personal:{record.id}",
+                        enabled=record.enabled,
+                    )
+                )
+                self._personal_agent_ids.add(record.id)
+            except Exception:
+                self.settings_warnings.append(
+                    "Uma configuração de agente inválida ou duplicada foi ignorada."
+                )
+        for record in snapshot.bindings:
+            if record.agent_id not in self._personal_agent_ids:
+                self.settings_warnings.append("Um vínculo sem agente pessoal foi ignorado.")
+                continue
+            try:
+                self.connections.get(record.connection_id)
+                self.bindings.register(record.agent_id, record.connection_id)
+            except Exception:
+                self.settings_warnings.append(
+                    "Um vínculo com conexão ausente ou inválida foi ignorado."
+                )
+
     def list_agents(self) -> tuple[AgentDefinition, ...]:
         return self.agents.list_agents()
 
@@ -194,10 +243,13 @@ class DesktopApplicationServices:
             }.get(provider_id)
             if connection_id is None:
                 raise ValueError("O provedor não possui conexão configurada nesta interface.")
-            adapter_id = f"provider:{provider_id}"
+            adapter_id = f"personal:{agent_id}"
         else:
             connection_id = None
-            adapter_id = f"unconfigured:{agent_id}"
+            adapter_id = f"personal:{agent_id}"
+
+        if agent_id in {item[0] for item in self.DEMO_AGENTS}:
+            raise ValueError("O identificador é reservado para agente demonstrativo.")
 
         definition = AgentDefinition(
             id=agent_id,
@@ -207,16 +259,70 @@ class DesktopApplicationServices:
             adapter_id=adapter_id,
         )
         registered = self.agents.register(definition)
-        if connection_id is not None:
-            self.bindings.register(registered.id, connection_id)
+        try:
+            if self.settings_store is not None:
+                self.settings_store.save_desktop_agent(
+                    self._record_for_agent(registered),
+                    binding_connection_id=connection_id,
+                )
+            if connection_id is not None:
+                self.bindings.register(registered.id, connection_id)
+        except Exception:
+            self.agents.delete(registered.id)
+            if self.settings_store is not None:
+                self.settings_store.delete_desktop_agent(registered.id)
+            raise
+        self._personal_agent_ids.add(registered.id)
         return registered
 
     def set_agent_enabled(self, agent_id: str, enabled: bool) -> AgentDefinition:
         if not isinstance(enabled, bool):
             raise ValueError("enabled precisa ser booleano.")
-        return self.agents.enable(agent_id) if enabled else self.agents.disable(agent_id)
+        current = self.agents.get(agent_id)
+        updated = replace(current, enabled=enabled)
+        if agent_id in self._personal_agent_ids and self.settings_store is not None:
+            self.settings_store.save_desktop_agent(self._record_for_agent(updated))
+        return self.agents.update(updated)
+
+    def update_agent(
+        self,
+        agent_id: str,
+        *,
+        name: str,
+        description: str,
+        capabilities: tuple[str, ...],
+    ) -> AgentDefinition:
+        if agent_id not in self._personal_agent_ids:
+            raise ValueError("Somente agentes pessoais podem ser editados.")
+        current = self.agents.get(agent_id)
+        updated = AgentDefinition(
+            id=current.id,
+            name=name,
+            description=description,
+            capabilities=capabilities,
+            adapter_id=current.adapter_id,
+            enabled=current.enabled,
+        )
+        if self.settings_store is not None:
+            self.settings_store.save_desktop_agent(self._record_for_agent(updated))
+        return self.agents.update(updated)
+
+    def delete_agent(self, agent_id: str) -> AgentDefinition:
+        if agent_id not in self._personal_agent_ids:
+            raise ValueError("Somente agentes pessoais podem ser excluídos.")
+        current = self.agents.get(agent_id)
+        if self.settings_store is not None:
+            self.settings_store.delete_desktop_agent(agent_id)
+        self.bindings.remove_for_agent(agent_id)
+        deleted = self.agents.delete(agent_id)
+        self._personal_agent_ids.remove(agent_id)
+        return deleted
+
+    def is_personal_agent(self, agent_id: str) -> bool:
+        return agent_id in self._personal_agent_ids
 
     def bind_agent(self, agent_id: str, provider_id: str):
+        self.agents.get(agent_id)
         self.providers.get(provider_id)
         connection_id = {
             CODEX_PROVIDER_ID: CODEX_CONNECTION_ID,
@@ -224,7 +330,26 @@ class DesktopApplicationServices:
         }.get(provider_id)
         if connection_id is None:
             raise ValueError("O provedor não possui conexão configurada nesta interface.")
-        return self.bindings.register(agent_id, connection_id)
+        binding = self.bindings.register(agent_id, connection_id)
+        if agent_id in self._personal_agent_ids and self.settings_store is not None:
+            try:
+                self.settings_store.save_desktop_binding(
+                    DesktopAgentBindingRecord(agent_id, connection_id)
+                )
+            except Exception:
+                self.bindings.unregister(binding.id)
+                raise
+        return binding
+
+    @staticmethod
+    def _record_for_agent(agent: AgentDefinition) -> DesktopAgentRecord:
+        return DesktopAgentRecord(
+            id=agent.id,
+            name=agent.name,
+            description=agent.description,
+            capabilities=agent.capabilities,
+            enabled=agent.enabled,
+        )
 
     def diagnose_integrations(self):
         """Executa apenas probes locais; não consulta contas nem estabelece rede."""

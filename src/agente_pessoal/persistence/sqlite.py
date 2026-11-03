@@ -35,6 +35,8 @@ def _json_dump(value: object) -> str:
 class SQLiteStore:
     """Repositório SQLite único, compartilhável pelos ports do núcleo e segurança."""
 
+    SCHEMA_VERSION = 1
+
     def __init__(self, database_path: str | Path) -> None:
         raw_path = str(database_path)
         self.database_path = (
@@ -115,6 +117,181 @@ class SQLiteStore:
                 self._connection.execute(
                     "ALTER TABLE tasks ADD COLUMN interpretation_json TEXT"
                 )
+            self._migrate_schema()
+
+    def _migrate_schema(self) -> None:
+        version = self._connection.execute("PRAGMA user_version").fetchone()[0]
+        if version > self.SCHEMA_VERSION:
+            raise RuntimeError("O banco usa uma versão de esquema mais recente.")
+        if version == self.SCHEMA_VERSION:
+            return
+
+        with self._connection:
+            self._connection.execute(
+                """CREATE TABLE IF NOT EXISTS desktop_personal_agents (
+                    id TEXT PRIMARY KEY CHECK(length(trim(id)) > 0),
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    capabilities_json TEXT NOT NULL,
+                    enabled INTEGER NOT NULL CHECK(enabled IN (0, 1))
+                )"""
+            )
+            self._connection.execute(
+                """CREATE TABLE IF NOT EXISTS desktop_personal_bindings (
+                    agent_id TEXT NOT NULL REFERENCES desktop_personal_agents(id) ON DELETE CASCADE,
+                    connection_id TEXT NOT NULL CHECK(length(trim(connection_id)) > 0),
+                    PRIMARY KEY(agent_id, connection_id)
+                )"""
+            )
+            self._connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_desktop_binding_connection "
+                "ON desktop_personal_bindings(connection_id)"
+            )
+            self._connection.execute(
+                """CREATE TABLE IF NOT EXISTS desktop_preferences (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )"""
+            )
+            self._connection.execute(f"PRAGMA user_version = {self.SCHEMA_VERSION}")
+
+    def save_desktop_agent(self, record, *, binding_connection_id: str | None = None) -> None:
+        """Insere/atualiza configuração pessoal; nunca armazena permissões ou credenciais."""
+        from agente_pessoal.persistence.records import DesktopAgentRecord
+
+        if not isinstance(record, DesktopAgentRecord):
+            raise TypeError("record deve ser DesktopAgentRecord.")
+        if binding_connection_id is not None and (
+            not isinstance(binding_connection_id, str) or not binding_connection_id.strip()
+        ):
+            raise ValueError("binding_connection_id deve ser texto não vazio.")
+        with self._lock, self._connection:
+            self._connection.execute(
+                """INSERT INTO desktop_personal_agents(
+                    id, name, description, capabilities_json, enabled
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    name=excluded.name,
+                    description=excluded.description,
+                    capabilities_json=excluded.capabilities_json,
+                    enabled=excluded.enabled""",
+                (
+                    record.id,
+                    record.name,
+                    record.description,
+                    _json_dump(list(record.capabilities)),
+                    int(record.enabled),
+                ),
+            )
+            if binding_connection_id is not None:
+                self._connection.execute(
+                    "INSERT OR IGNORE INTO desktop_personal_bindings(agent_id, connection_id) "
+                    "VALUES (?, ?)",
+                    (record.id, binding_connection_id),
+                )
+
+    def save_desktop_binding(self, record) -> None:
+        from agente_pessoal.persistence.records import DesktopAgentBindingRecord
+
+        if not isinstance(record, DesktopAgentBindingRecord):
+            raise TypeError("record deve ser DesktopAgentBindingRecord.")
+        with self._lock, self._connection:
+            self._connection.execute(
+                "INSERT OR IGNORE INTO desktop_personal_bindings(agent_id, connection_id) "
+                "VALUES (?, ?)",
+                (record.agent_id, record.connection_id),
+            )
+
+    def delete_desktop_binding(self, agent_id: str, connection_id: str) -> bool:
+        with self._lock, self._connection:
+            cursor = self._connection.execute(
+                "DELETE FROM desktop_personal_bindings WHERE agent_id = ? AND connection_id = ?",
+                (agent_id, connection_id),
+            )
+            return cursor.rowcount > 0
+
+    def delete_desktop_agent(self, agent_id: str) -> bool:
+        with self._lock, self._connection:
+            cursor = self._connection.execute(
+                "DELETE FROM desktop_personal_agents WHERE id = ?", (agent_id,)
+            )
+            return cursor.rowcount > 0
+
+    def save_desktop_preference(self, record) -> None:
+        from agente_pessoal.persistence.records import DesktopPreferenceRecord
+
+        if not isinstance(record, DesktopPreferenceRecord):
+            raise TypeError("record deve ser DesktopPreferenceRecord.")
+        with self._lock, self._connection:
+            self._connection.execute(
+                "INSERT INTO desktop_preferences(key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (record.key, record.value),
+            )
+
+    def load_desktop_settings(self):
+        """Carrega registros válidos e informa problemas sem expor conteúdo local."""
+        import json
+
+        from agente_pessoal.persistence.records import (
+            DesktopAgentBindingRecord,
+            DesktopAgentRecord,
+            DesktopPreferenceRecord,
+            DesktopSettingsSnapshot,
+        )
+
+        issues: list[str] = []
+        agents: list[DesktopAgentRecord] = []
+        bindings: list[DesktopAgentBindingRecord] = []
+        with self._lock:
+            agent_rows = self._connection.execute(
+                "SELECT id, name, description, capabilities_json, enabled "
+                "FROM desktop_personal_agents ORDER BY id"
+            ).fetchall()
+            binding_rows = self._connection.execute(
+                "SELECT agent_id, connection_id FROM desktop_personal_bindings "
+                "ORDER BY agent_id, connection_id"
+            ).fetchall()
+            preference_rows = self._connection.execute(
+                "SELECT key, value FROM desktop_preferences ORDER BY key"
+            ).fetchall()
+
+        for row in agent_rows:
+            try:
+                capabilities = json.loads(row["capabilities_json"])
+                if not isinstance(capabilities, list) or row["enabled"] not in (0, 1):
+                    raise ValueError("registro inválido")
+                agents.append(
+                    DesktopAgentRecord(
+                        id=row["id"],
+                        name=row["name"],
+                        description=row["description"],
+                        capabilities=tuple(capabilities),
+                        enabled=bool(row["enabled"]),
+                    )
+                )
+            except (TypeError, ValueError, json.JSONDecodeError):
+                issues.append("Uma configuração de agente inválida foi ignorada.")
+
+        for row in binding_rows:
+            try:
+                bindings.append(
+                    DesktopAgentBindingRecord(
+                        agent_id=row["agent_id"],
+                        connection_id=row["connection_id"],
+                    )
+                )
+            except (TypeError, ValueError):
+                issues.append("Um vínculo inválido foi ignorado.")
+        preferences = []
+        for row in preference_rows:
+            try:
+                preferences.append(DesktopPreferenceRecord(key=row["key"], value=row["value"]))
+            except (TypeError, ValueError):
+                issues.append("Uma preferência de interface inválida foi ignorada.")
+        return DesktopSettingsSnapshot(
+            tuple(agents), tuple(bindings), tuple(issues), tuple(preferences)
+        )
 
     def create_task(self, request: UserRequest, task: Task) -> None:
         with self._lock, self._connection:
