@@ -11,6 +11,9 @@ requires-python = ">=3.11"
 license = { text = "Proprietary" }
 dependencies = ["openai>=1.68,<3", "openai-codex>=0.163.0,<0.164.0"]
 
+[project.scripts]
+agente-pessoal = "agente_pessoal.desktop.app:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

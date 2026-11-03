@@ -159,3 +159,20 @@ Por padrão o comando não consulta contas, inicia login, chama modelos, executa
 O SDK Codex documenta sandbox `read_only`, mas sua API pública de alto nível não fornece um manipulador de aprovação; o cliente de baixo nível aceita aprovações automaticamente em certos caminhos por padrão. Por isso, não há execução por Codex nesta etapa. [Documentação do SDK Codex](https://github.com/openai/codex/tree/main/sdk/python) · [Referência da API](https://github.com/openai/codex/blob/main/sdk/python/docs/api-reference.md)
 
 A Gemini CLI oferece prompts headless, ferramentas, modos de aprovação e sandbox. O modo `plan` é descrito como somente leitura, mas a documentação atual diz que esse modo ainda está em desenvolvimento; os modos `auto_edit` e `yolo` aprovam ações automaticamente. O Agente Pessoal não inicia esses modos nem os usa como integração de execução. Uma etapa futura precisa limitar ferramentas e caminhos, validar argumentos, manter aprovação explícita e usar isolamento confiável antes de encaminhar tarefas. [Opções oficiais da CLI](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/cli-reference.md) · [Configuração e aprovação](https://github.com/google-gemini/gemini-cli/blob/main/docs/reference/configuration.md)
+
+## Interface desktop inicial (M5.1)
+
+No Windows, instale o projeto no ambiente Python e abra a janela Tkinter:
+
+```powershell
+py -m pip install -e .
+py -m agente_pessoal.desktop
+```
+
+Também está disponível o comando `agente-pessoal` após a instalação. A janela abre no painel inicial e não inicia diagnóstico, login, chamadas de rede ou tarefas. Em **Contas e integrações**, use **Atualizar diagnóstico local** para detectar o SDK/runtime Codex e a Gemini CLI. Esses estados de instalação são separados de autenticação e da capacidade operacional; execução real continua desativada.
+
+Para autenticar Codex, escolha navegador ou código de dispositivo, selecione **Iniciar login…** e confirme a autorização temporária `web.access`. A janela mostra URL/código e permite abrir o navegador oficial, concluir o fluxo ou cancelar; as operações lentas rodam fora do loop da interface. Ao confirmar a conclusão, a conta é consultada pelo SDK oficial. A autorização fica apenas na memória durante o fluxo. Para verificar a conta depois, use **Verificar conta Codex…** e confirme a consulta. Para Gemini, inicie `gemini` no terminal e escolha “Sign in with Google” na CLI oficial ([autenticação](https://github.com/google-gemini/gemini-cli/blob/main/docs/get-started/authentication.mdx)); o estado da sessão Google na interface permanece não verificado e nenhum prompt é enviado.
+
+**Meus agentes** lista três agentes identificados como demonstrativos e permite cadastrar agentes próprios e alterar estado ou vínculo em memória. As definições desaparecem ao encerrar a aplicação; nenhum agente recebe permissões ou executor real por causa de um vínculo. **Maestro e fluxos** executa apenas três etapas determinísticas sinalizadas `SIMULAÇÃO`; a confirmação concede `agent.execute` somente ao fluxo simulado em memória.
+
+Diagnóstico de permissões explica o uso temporário de `web.access` e `agent.execute`. A aplicação não grava credenciais, não altera SQLite, não acessa arquivos pessoais, não executa comandos e não envia solicitações de texto a contas Codex/Gemini. A interface depende de Tkinter/ttk da biblioteca padrão; não adiciona dependências.
